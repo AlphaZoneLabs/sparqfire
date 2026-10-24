@@ -1,0 +1,22 @@
+{
+  "name": "sparqfire",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/app",
+    "apps/worker"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "postinstall": "node scripts/sync-brand-assets.mjs",
+    "brand:sync": "node scripts/sync-brand-assets.mjs",
+    "dev": "npm run dev -w @sparqfire/app",
+    "dev:api": "npm run dev -w @sparqfire/worker",
+    "check": "npm run typecheck -w @sparqfire/app && npm run typecheck -w @sparqfire/worker && npm run test -w @sparqfire/worker",
+    "build:web": "npm run build:web -w @sparqfire/app",
+    "deploy:preview": "npm run build:web && npm run deploy:preview -w @sparqfire/worker",
+    "deploy:production": "npm run build:web && npm run deploy:production -w @sparqfire/worker"
+  }
+}

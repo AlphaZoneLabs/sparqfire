@@ -1,0 +1,2 @@
+# Copy as .dev.vars.preview for local preview. NEVER commit the real key.
+BOOTSTRAP_KEY=REPLACE_WITH_A_RANDOM_64_CHARACTER_SECRET

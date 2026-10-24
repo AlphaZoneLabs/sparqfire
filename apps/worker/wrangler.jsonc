@@ -1,0 +1,21 @@
+{
+  "$schema":"node_modules/wrangler/config-schema.json",
+  "name":"sparqfire",
+  "main":"src/index.ts",
+  "compatibility_date":"2026-10-23",
+  "observability":{"enabled":true},
+  "env":{
+    "preview":{
+      "name":"sparqfire-preview",
+      "vars":{"ENVIRONMENT":"preview","APP_ORIGIN":"http://localhost:8081"},
+      "assets":{"directory":"../app/dist","binding":"ASSETS","not_found_handling":"single-page-application","run_worker_first":["/api/*"]},
+      "d1_databases":[{"binding":"DB","database_name":"sparqfire-preview","database_id":"REPLACE_WITH_PREVIEW_D1_UUID","migrations_dir":"migrations"}]
+    },
+    "production":{
+      "name":"sparqfire-production",
+      "vars":{"ENVIRONMENT":"production","APP_ORIGIN":"https://sparqfire.example.com"},
+      "assets":{"directory":"../app/dist","binding":"ASSETS","not_found_handling":"single-page-application","run_worker_first":["/api/*"]},
+      "d1_databases":[{"binding":"DB","database_name":"sparqfire-production","database_id":"REPLACE_WITH_PRODUCTION_D1_UUID","migrations_dir":"migrations"}]
+    }
+  }
+}
