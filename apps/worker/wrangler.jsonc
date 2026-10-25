@@ -9,13 +9,13 @@
       "name":"sparqfire-preview",
       "vars":{"ENVIRONMENT":"preview","APP_ORIGIN":"http://localhost:8081"},
       "assets":{"directory":"../app/dist","binding":"ASSETS","not_found_handling":"single-page-application","run_worker_first":["/api/*"]},
-      "d1_databases":[{"binding":"DB","database_name":"sparqfire-preview","database_id":"REPLACE_WITH_PREVIEW_D1_UUID","migrations_dir":"migrations"}]
+      "d1_databases":[{"binding":"DB","database_name":"sparqfire-preview","database_id":"96e024df-4bac-487b-9300-115a219b87e9","migrations_dir":"migrations"}]
     },
     "production":{
       "name":"sparqfire-production",
       "vars":{"ENVIRONMENT":"production","APP_ORIGIN":"https://sparqfire.example.com"},
       "assets":{"directory":"../app/dist","binding":"ASSETS","not_found_handling":"single-page-application","run_worker_first":["/api/*"]},
-      "d1_databases":[{"binding":"DB","database_name":"sparqfire-production","database_id":"REPLACE_WITH_PRODUCTION_D1_UUID","migrations_dir":"migrations"}]
+      "d1_databases":[{"binding":"DB","database_name":"sparqfire-production","database_id":"35b2a003-3426-4639-9f1c-6e906ed3052a","migrations_dir":"migrations"}]
     }
   }
 }
