@@ -13,6 +13,7 @@
       "distribution": "internal",
       "environment": "preview",
       "channel": "preview",
+      "env": { "EXPO_PUBLIC_API_URL": "https://sparqfire.getsparqd.com" },
       "ios": { "buildConfiguration": "Release", "simulator": false }
     },
     "simulator": {
