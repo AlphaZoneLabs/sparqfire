@@ -16,7 +16,14 @@
     "dev:api": "npm run dev -w @sparqfire/worker",
     "check": "npm run typecheck -w @sparqfire/app && npm run typecheck -w @sparqfire/worker && npm run test -w @sparqfire/worker",
     "build:web": "npm run build:web -w @sparqfire/app",
-    "deploy:preview": "npm run build:web && npm run deploy:preview -w @sparqfire/worker",
-    "deploy:production": "npm run build:web && npm run deploy:production -w @sparqfire/worker"
+    "configure:worker": "node scripts/worker-config.mjs configure",
+    "deploy:preview": "node scripts/worker-config.mjs check preview && npm run build:web && npm run db:preview -w @sparqfire/worker && npm run deploy:preview -w @sparqfire/worker",
+    "deploy:production": "node scripts/worker-config.mjs check production && npm run build:web && npm run db:production -w @sparqfire/worker && npm run deploy:production -w @sparqfire/worker",
+    "build:ios:preview": "npm run build:ios:preview -w @sparqfire/app",
+    "build:ios:simulator": "npm run build:ios:simulator -w @sparqfire/app",
+    "build:ios:production": "npm run build:ios:production -w @sparqfire/app",
+    "update:ios:preview": "npm run update:ios:preview -w @sparqfire/app",
+    "update:ios:production": "npm run update:ios:production -w @sparqfire/app",
+    "test:release": "node --test scripts/test/ios-release.test.mjs"
   }
 }

@@ -1,21 +1,26 @@
 {
-  "$schema":"node_modules/wrangler/config-schema.json",
-  "name":"sparqfire",
-  "main":"src/index.ts",
-  "compatibility_date":"2026-10-23",
-  "observability":{"enabled":true},
-  "env":{
-    "preview":{
-      "name":"sparqfire-preview",
-      "vars":{"ENVIRONMENT":"preview","APP_ORIGIN":"http://localhost:8081"},
-      "assets":{"directory":"../app/dist","binding":"ASSETS","not_found_handling":"single-page-application","run_worker_first":["/api/*"]},
-      "d1_databases":[{"binding":"DB","database_name":"sparqfire-preview","database_id":"96e024df-4bac-487b-9300-115a219b87e9","migrations_dir":"migrations"}]
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "sparqfire",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-23",
+  "observability": { "enabled": true },
+  "env": {
+    "preview": {
+      "name": "sparqfire-preview",
+      "vars": { "ENVIRONMENT": "preview", "APP_ORIGIN": "http://localhost:8081" },
+      "triggers": { "crons": ["17 3 * * *"] },
+      "ratelimits": [{ "name": "AUTH_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }],
+      "assets": { "directory": "../app/dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true },
+      "d1_databases": [{ "binding": "DB", "database_name": "sparqfire-preview", "database_id": "96e024df-4bac-487b-9300-115a219b87e9", "migrations_dir": "migrations" }]
     },
-    "production":{
-      "name":"sparqfire-production",
-      "vars":{"ENVIRONMENT":"production","APP_ORIGIN":"https://sparqfire.getsparqd.com"},
-      "assets":{"directory":"../app/dist","binding":"ASSETS","not_found_handling":"single-page-application","run_worker_first":["/api/*"]},
-      "d1_databases":[{"binding":"DB","database_name":"sparqfire-production","database_id":"35b2a003-3426-4639-9f1c-6e906ed3052a","migrations_dir":"migrations"}]
+    "production": {
+      "name": "sparqfire-production",
+      "vars": { "ENVIRONMENT": "production", "APP_ORIGIN": "https://sparqfire.getsparqd.com" },
+      "routes": [{ "pattern": "sparqfire.getsparqd.com", "custom_domain": true }],
+      "triggers": { "crons": ["17 4 * * *"] },
+      "ratelimits": [{ "name": "AUTH_LIMITER", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }],
+      "assets": { "directory": "../app/dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true },
+      "d1_databases": [{ "binding": "DB", "database_name": "sparqfire-production", "database_id": "35b2a003-3426-4639-9f1c-6e906ed3052a", "migrations_dir": "migrations" }]
     }
   }
 }

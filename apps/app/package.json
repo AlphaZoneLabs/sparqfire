@@ -9,7 +9,13 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "build:web": "expo export --platform web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:ios:preview": "eas build --platform ios --profile preview",
+    "build:ios:simulator": "eas build --platform ios --profile simulator",
+    "build:ios:production": "eas build --platform ios --profile production",
+    "update:ios:preview": "eas env:exec preview \"node ../../scripts/publish-ios-update.mjs preview\"",
+    "update:ios:production": "eas env:exec production \"node ../../scripts/publish-ios-update.mjs production\"",
+    "submit:ios": "eas submit --platform ios --profile production"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.0",
@@ -19,6 +25,7 @@
     "expo-router": "~58.0.20",
     "expo-secure-store": "~58.0.2",
     "expo-status-bar": "~58.0.4",
+    "expo-updates": "~58.0.18",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.0",
@@ -28,6 +35,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
-    "typescript": "~6.0.3"
+    "eas-cli": "25.3.0",
+    "typescript": "~5.9.0"
   }
 }

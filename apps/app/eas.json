@@ -1,21 +1,33 @@
 {
   "cli": {
-    "version": ">= 25.3.0",
+    "version": ">=25.3.0",
     "appVersionSource": "remote"
   },
   "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal"
+    "base": {
+      "node": "24.11.1",
+      "env": { "SPARQFIRE_RELEASE": "1" }
     },
     "preview": {
-      "distribution": "internal"
+      "extends": "base",
+      "distribution": "internal",
+      "environment": "preview",
+      "channel": "preview",
+      "ios": { "buildConfiguration": "Release", "simulator": false }
+    },
+    "simulator": {
+      "extends": "preview",
+      "ios": { "buildConfiguration": "Release", "simulator": true }
     },
     "production": {
-      "autoIncrement": true
+      "extends": "base",
+      "distribution": "store",
+      "environment": "production",
+      "channel": "production",
+      "env": { "SPARQFIRE_RELEASE": "1", "EXPO_PUBLIC_API_URL": "https://sparqfire.getsparqd.com" },
+      "autoIncrement": true,
+      "ios": { "buildConfiguration": "Release", "simulator": false }
     }
   },
-  "submit": {
-    "production": {}
-  }
+  "submit": { "production": {} }
 }

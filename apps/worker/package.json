@@ -1,21 +1,17 @@
 {
-  "name": "@sparqfire/worker",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
+  "name": "@sparqfire/worker", "version":"0.1.0", "private":true,
+  "type":"module",
   "scripts": {
-    "dev": "wrangler dev --env preview",
-    "typecheck": "tsc --noEmit",
-    "test": "node --experimental-sqlite --test test/*.test.mjs",
-    "db:local": "wrangler d1 migrations apply sparqfire-preview --local --env preview",
-    "db:preview": "wrangler d1 migrations apply sparqfire-preview --remote --env preview",
-    "db:production": "wrangler d1 migrations apply sparqfire-production --remote --env production",
-    "deploy:preview": "wrangler deploy --env preview",
-    "deploy:production": "wrangler deploy --env production"
+    "dev":"wrangler dev --env preview",
+    "typecheck":"tsc --noEmit",
+    "test":"node --experimental-strip-types --experimental-sqlite --test --test-concurrency=1 test/*.test.mjs",
+    "db:local":"wrangler d1 migrations apply sparqfire-preview --local --env preview",
+    "db:preview":"wrangler d1 migrations apply sparqfire-preview --remote --env preview",
+    "db:production":"wrangler d1 migrations apply sparqfire-production --remote --env production",
+    "deploy:preview":"node ../../scripts/worker-config.mjs check preview && wrangler deploy --env preview",
+    "deploy:production":"node ../../scripts/worker-config.mjs check production && wrangler deploy --env production",
+    "build":"wrangler deploy --dry-run --env production"
   },
-  "devDependencies": {
-    "@cloudflare/workers-types": "5.20261024.1",
-    "typescript": "~5.9.0",
-    "wrangler": "^4.0.0"
-  }
+  "dependencies":{"@noble/hashes":"^2.0.1"},
+  "devDependencies":{"@cloudflare/workers-types":"^5.20261025.1","esbuild":"^0.28.2","miniflare":"4.20260730.0","typescript":"~5.9.0","wrangler":"^4.0.0"}
 }

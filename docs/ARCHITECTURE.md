@@ -2,18 +2,19 @@
 
 ## Authentication
 
-- Email + 14+-character password hashed using PBKDF2-SHA256, 600k iterations, random 128-bit salt.
+- Email + 14+-character password hashed using PBKDF2-SHA256, 600k iterations, random 128-bit salt. Uses `@noble/hashes` to preserve the existing hash format without exceeding Cloudflare production Web Crypto's 100k iteration cap. Use Workers Paid for hashing CPU requirements.
 - Opaque random 256-bit session tokens; SHA-256 digest stored in D1; expiration after seven days.
 - HttpOnly, SameSite=Lax, Secure cookies on HTTPS browser sessions; native stores bearer token in Expo SecureStore.
 - Explicit Origin checks for cookie-based state-changing calls, fixed allowed web origins, and per-email lockout (5 attempts/15 min). Production still requires Cloudflare WAF rate limits and 2FA.
-- Owner account setup requires a long secret and works only while no owner exists; remove the secret after bootstrap.
+- Owner account setup requires a long secret and works only while no owner exists; a unique database index enforces that rule under concurrency. Remove the secret after bootstrap.
+- Login/setup use a per-IP Cloudflare rate limiter plus the existing per-email failure lockout. A daily cron removes expired sessions and old attempts.
 
 ## Multi-tenancy
 
 - `workspace_id` on contacts, campaigns, sender domains, audit events and access mapping.
 - All API reads/writes use a specific validated workspace id, membership check, and scoped SQL query.
 - No hard delete, import, mass-send or unsubscribed-contact reactivation endpoints at this stage.
-- Add tenant-isolation integration tests before handling real client data.
+- SQLite integration tests exercise tenant isolation, read-only membership, expired sessions, CSRF, and auth failures. Cloudflare runtime tests exercise migrated D1 and native authentication. Business writes and their audit records use atomic D1 batches.
 
 ## Web and native
 

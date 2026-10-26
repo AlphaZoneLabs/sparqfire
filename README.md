@@ -18,6 +18,10 @@
 
 **No marketing emails can be sent.** Domain DNS verification, SPF/DKIM/DMARC provisioning, unsubscribe links and suppression sync, segmentation and imports, template editor, real broadcasts, delivery provider integration, provider webhooks, Google sign-in, 2FA, account invitations, rate limiting at the Cloudflare edge, data export/delete controls, and production readiness review are future work. Domain status always begins as `pending`; it cannot be promoted by the existing API.
 
+## Deploy the Worker and standalone iOS app
+
+Production is configured for **https://sparqfire.getsparqd.com**, with separate preview/production D1 databases from the repository. Follow [the Worker deployment guide](docs/WORKER_DEPLOYMENT.md) to authenticate, apply migrations, deploy the web app/API, and create the owner. Follow [the iOS release guide](docs/IOS_RELEASES.md) to link the AlphaZoneLabs Expo project, sign standalone builds, publish OTA updates, and verify rollback.
+
 ## Requirements
 
 - Node.js 22.13+ (Node.js 24 LTS also suitable)
@@ -31,8 +35,7 @@
 git clone https://github.com/AlphaZoneLabs/sparqfire.git
 cd sparqfire
 # Extract the overlay ZIP here, preserving the two existing PNG files.
-npm install
-npx expo install --fix --workspace @sparqfire/app
+npm ci
 npm run check
 Copy-Item apps/app/.env.example apps/app/.env
 # Update EXPO_PUBLIC_API_URL if your Worker is not at localhost:8787.
@@ -44,15 +47,15 @@ The UI opens in demo mode even if the Worker is not configured. The root postins
 ## Configuring Cloudflare preview
 
 1. Log in: `npx wrangler login`.
-2. Create two D1 databases (do **not** use the same database for preview and production):
+2. The repository already contains separate preview/production D1 UUIDs. If deploying into a new Cloudflare account, create replacements (do **not** use the same database for preview and production):
 
 ```powershell
 npx wrangler d1 create sparqfire-preview
 npx wrangler d1 create sparqfire-production
 ```
 
-3. In `apps/worker/wrangler.jsonc`, replace each `REPLACE_WITH_..._D1_UUID` with the ID returned for that database.
-4. In preview, set `APP_ORIGIN` to the actual allowed Expo web origin (usually `http://localhost:8081` for Expo development). Set production `APP_ORIGIN` to the real final web domain before launch; the placeholder is not a real domain.
+3. Only when replacing databases, run `npm run configure:worker -- preview UUID` and `npm run configure:worker -- production UUID` with the returned IDs.
+4. In preview, `APP_ORIGIN` permits `http://localhost:8081` for Expo development. Production uses `https://sparqfire.getsparqd.com`.
 5. Copy `apps/worker/.dev.vars.example` to `apps/worker/.dev.vars.preview`, replace the dummy key with a long random secret. This file is gitignored.
 6. Build the web assets, apply local migrations, start the local Worker:
 
@@ -132,4 +135,4 @@ sparqfire/
 
 ## Current limitations
 
-This project package was generated in an isolated workspace without npm registry access. Dependencies could not be installed and Metro/native builds could not be exercised here. Run `npm install`, `npx expo install --fix`, `npm run check`, `npx expo-doctor`, and actual Expo/Worker smoke tests in a network-connected checkout before merging or deploying. Commit the generated `package-lock.json` after the first validated install.
+The lockfile pins the installed dependency set. Signing and device-level iOS/OTA acceptance require the owning Expo project and Apple Developer credentials. Follow the release acceptance checklist before distributing to users. Campaign sending and domain verification remain future work.

@@ -1,4 +1,6 @@
 import { normalizeEmail, validateDomain, boundedText, strongPassword } from './validation.mjs';
+import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
+import { sha256 as sha256Hash } from '@noble/hashes/sha2.js';
 
 interface Env {
   DB: D1Database;
@@ -6,9 +8,9 @@ interface Env {
   ENVIRONMENT: 'preview'|'production';
   APP_ORIGIN: string;
   BOOTSTRAP_KEY?: string;
+  AUTH_LIMITER?: RateLimit;
 }
 type Actor={id:string;email:string;role:'owner'|'member';tokenHash:string;viaBearer:boolean};
-type Row=Record<string,string|number|null>;
 const json=(data:unknown,status=200,extra?:HeadersInit)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...(extra||{})}});
 const fail=(message:string,status=400)=>json({error:message},status);
 const today=()=>new Date().toISOString();
@@ -16,21 +18,41 @@ const randomToken=()=>b64url(crypto.getRandomValues(new Uint8Array(32)));
 function b64url(bytes:Uint8Array){let value='';for(const b of bytes)value+=String.fromCharCode(b);return btoa(value).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'')}
 function fromB64url(data:string){const binary=atob(data.replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(binary,c=>c.charCodeAt(0))}
 async function sha256(value:string){return b64url(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))))}
-async function hashPassword(password:string,salt:string){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:fromB64url(salt),iterations:600000},key,256);return b64url(new Uint8Array(bits))}
+// Workers production caps native Web Crypto PBKDF2 at 100k iterations.
+// Keep the existing standard 600k SHA-256 format and compatibility with stored hashes.
+async function hashPassword(password:string,salt:string){return b64url(await pbkdf2Async(sha256Hash,new TextEncoder().encode(password),fromB64url(salt),{c:600000,dkLen:32}))}
 function equalTime(a:string,b:string){if(a.length!==b.length)return false;let n=0;for(let i=0;i<a.length;i++)n|=a.charCodeAt(i)^b.charCodeAt(i);return n===0}
 function cookieValue(req:Request,key:string){const v=req.headers.get('Cookie')??'';return v.split(';').map(s=>s.trim()).find(s=>s.startsWith(key+'='))?.slice(key.length+1)??null}
 async function actor(req:Request,env:Env):Promise<Actor|null>{const bearer=req.headers.get('Authorization')?.match(/^Bearer\s+([\w-]{30,})$/i)?.[1]??null;const token=bearer??cookieValue(req,'sparqfire_session');if(!token)return null;const tokenHash=await sha256(token);const row=await env.DB.prepare("SELECT u.id,u.email,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?").bind(tokenHash,today()).first<{id:string;email:string;role:'owner'|'member'}>();return row?{...row,tokenHash,viaBearer:!!bearer}:null}
 function originAllowed(req:Request,env:Env){const origin=req.headers.get('Origin');return !origin||origin===new URL(req.url).origin||origin===env.APP_ORIGIN}
 function cors(req:Request,env:Env,response:Response){const origin=req.headers.get('Origin');if(!origin||!originAllowed(req,env))return response;const h=new Headers(response.headers);h.set('Access-Control-Allow-Origin',origin);h.set('Access-Control-Allow-Credentials','true');h.set('Vary','Origin');return new Response(response.body,{status:response.status,statusText:response.statusText,headers:h})}
-async function body(req:Request):Promise<Record<string,unknown>|null>{if((Number(req.headers.get('Content-Length')||'0'))>16384)return null;try{const raw=await req.text();if(new TextEncoder().encode(raw).byteLength>16384)return null;const x=JSON.parse(raw);return x&&typeof x==='object'&&!Array.isArray(x)?x as Record<string,unknown>:null}catch{return null}}
-async function audit(env:Env,userId:string,workspaceId:string|null,action:string,entityId:string|null){await env.DB.prepare('INSERT INTO audit_events(id,actor_user_id,workspace_id,action,entity_id) VALUES(?,?,?,?,?)').bind(crypto.randomUUID(),userId,workspaceId,action,entityId).run()}
+async function body(req:Request):Promise<Record<string,unknown>|null>{
+ if(!/^application\/json(?:\s*;|$)/i.test(req.headers.get('Content-Type')??''))return null;
+ if(Number(req.headers.get('Content-Length')||'0')>16384||!req.body)return null;
+ const reader=req.body.getReader();let size=0;const chunks:Uint8Array[]=[];
+ try{
+  while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>16384){await reader.cancel();return null}chunks.push(value)}
+  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength}
+  const value=JSON.parse(new TextDecoder().decode(bytes));return value&&typeof value==='object'&&!Array.isArray(value)?value:null;
+ }catch{return null}finally{reader.releaseLock()}
+}
+function audit(env:Env,userId:string,workspaceId:string|null,action:string,entityId:string|null){return env.DB.prepare('INSERT INTO audit_events(id,actor_user_id,workspace_id,action,entity_id) VALUES(?,?,?,?,?)').bind(crypto.randomUUID(),userId,workspaceId,action,entityId)}
 async function membership(env:Env,user:Actor,id:string,write=false){if(user.role==='owner')return true;const row=await env.DB.prepare('SELECT role FROM workspace_members WHERE user_id=? AND workspace_id=?').bind(user.id,id).first<{role:string}>();return !!row&&(!write||row.role==='admin'||row.role==='editor')}
 async function route(req:Request,env:Env){
  const url=new URL(req.url),path=url.pathname,method=req.method;
- if(method==='OPTIONS')return new Response(null,{status:204,headers:{'Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type, Authorization, X-Bootstrap-Key','Access-Control-Max-Age':'7200'}});
  if(!originAllowed(req,env))return fail('Origin is not allowed',403);
+ if(method==='OPTIONS')return new Response(null,{status:204,headers:{'Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type, Authorization, X-Bootstrap-Key','Access-Control-Max-Age':'7200'}});
+ if(!['GET','POST'].includes(method))return json({error:'Method not allowed'},405,{Allow:'GET, POST, OPTIONS'});
  if(path==='/api/v1/health'&&method==='GET')return json({status:'ok',service:'sparqfire-api',environment:env.ENVIRONMENT});
  if(!env.DB)return fail('Database is not configured',503);
+ if(path==='/api/v1/ready'&&method==='GET'){
+  try{await env.DB.prepare('SELECT id FROM users LIMIT 1').first();await env.DB.prepare('SELECT id FROM audit_events LIMIT 1').first();return json({status:'ready',environment:env.ENVIRONMENT})}
+  catch{return fail('Database is unavailable or migrations are missing',503)}
+ }
+ if(method==='POST'&&(path==='/api/v1/auth/login'||path==='/api/v1/setup/owner')){
+  if(env.ENVIRONMENT==='production'&&!env.AUTH_LIMITER)return fail('Authentication protection is not configured',503);
+  if(env.AUTH_LIMITER){const ip=req.headers.get('CF-Connecting-IP')??'local';const result=await env.AUTH_LIMITER.limit({key:`sparqfire:${env.ENVIRONMENT}:${ip}`});if(!result.success)return json({error:'Too many attempts. Try again later.'},429,{'Retry-After':'60'})}
+ }
  if(path==='/api/v1/setup/owner'&&method==='POST'){
   const key=req.headers.get('X-Bootstrap-Key')??'';
   if(!env.BOOTSTRAP_KEY||env.BOOTSTRAP_KEY.length<32||!equalTime(key,env.BOOTSTRAP_KEY))return fail('Setup is unavailable',403);
@@ -38,19 +60,20 @@ async function route(req:Request,env:Env){
   const data=await body(req),email=normalizeEmail(data?.email),password=data?.password;
   if(!email||!strongPassword(password))return fail('Provide a valid email and password of at least 14 characters');
   const salt=b64url(crypto.getRandomValues(new Uint8Array(16))),hash=await hashPassword(password as string,salt),id=crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO users(id,email,password_salt,password_hash,role) VALUES(?,?,?,?,'owner')").bind(id,email,salt,hash).run();
+  try{await env.DB.prepare("INSERT INTO users(id,email,password_salt,password_hash,role) VALUES(?,?,?,?,'owner')").bind(id,email,salt,hash).run()}
+  catch(error){if(await env.DB.prepare("SELECT id FROM users WHERE role='owner' LIMIT 1").first())return fail('Owner already exists',409);throw error}
   return json({message:'Owner account created. Remove BOOTSTRAP_KEY after setup.'},201);
  }
  if(path==='/api/v1/auth/login'&&method==='POST'){
   const data=await body(req),email=normalizeEmail(data?.email),password=data?.password;
-  if(!email||typeof password!=='string')return fail('Invalid email or password',401);
+  if(!email||typeof password!=='string'||password.length>256)return fail('Invalid email or password',401);
   const attempt=await env.DB.prepare('SELECT failures,window_start FROM login_attempts WHERE email=?').bind(email).first<{failures:number;window_start:string}>();
   if(attempt&&Date.now()-new Date(attempt.window_start).getTime()<900000&&attempt.failures>=5)return fail('Too many attempts. Try again later.',429);
   const u=await env.DB.prepare('SELECT id,email,password_hash,password_salt,role FROM users WHERE email=?').bind(email).first<{id:string;email:string;password_hash:string;password_salt:string;role:string}>();
   const computed=await hashPassword(password,u?.password_salt??b64url(new Uint8Array(16)));
   if(!u||!equalTime(computed,u.password_hash)){
-   const failures=attempt&&Date.now()-new Date(attempt.window_start).getTime()<900000?attempt.failures+1:1;
-   await env.DB.prepare('INSERT INTO login_attempts(email,failures,window_start) VALUES(?,?,?) ON CONFLICT(email) DO UPDATE SET failures=excluded.failures,window_start=excluded.window_start').bind(email,failures,failures===1?today():attempt!.window_start).run();
+   const cutoff=new Date(Date.now()-900000).toISOString();
+   await env.DB.prepare('INSERT INTO login_attempts(email,failures,window_start) VALUES(?,1,?) ON CONFLICT(email) DO UPDATE SET failures=CASE WHEN login_attempts.window_start>? THEN login_attempts.failures+1 ELSE 1 END,window_start=CASE WHEN login_attempts.window_start>? THEN login_attempts.window_start ELSE excluded.window_start END').bind(email,today(),cutoff,cutoff).run();
    return fail('Invalid email or password',401);
   }
   await env.DB.prepare('DELETE FROM login_attempts WHERE email=?').bind(email).run();
@@ -73,7 +96,7 @@ async function route(req:Request,env:Env){
    if(a.role!=='owner')return fail('Only an agency owner can create clients',403);
    const data=await body(req),name=boundedText(data?.name,120),sender=boundedText(data?.sender_name,120);
    if(name.length<2||sender.length<2)return fail('Client and sender names must be at least two characters');
-   const id=crypto.randomUUID();await env.DB.prepare('INSERT INTO workspaces(id,name,sender_name) VALUES(?,?,?)').bind(id,name,sender).run();await audit(env,a.id,id,'workspace.created',id);
+   const id=crypto.randomUUID();await env.DB.batch([env.DB.prepare('INSERT INTO workspaces(id,name,sender_name) VALUES(?,?,?)').bind(id,name,sender),audit(env,a.id,id,'workspace.created',id)]);
    return json({item:{id,name,sender_name:sender,sender_email:null,brand_color:'#f97316',status:'active'}},201);
   }
  }
@@ -92,22 +115,44 @@ async function route(req:Request,env:Env){
    if(resource==='contacts'){
     const email=normalizeEmail(data.email),first=boundedText(data.first_name,80),last=boundedText(data.last_name,80),consent=boundedText(data.consent_source,300);
     if(!email||!consent||!first&&!last)return fail('Name, valid email and genuine consent source are required');
-    try{await env.DB.prepare('INSERT INTO contacts(id,workspace_id,email,first_name,last_name,consent_source,consent_at) VALUES(?,?,?,?,?,?,?)').bind(id,workspaceId,email,first,last,consent,today()).run()}catch{return fail('Contact already exists in this workspace or could not be saved',409)}
-    await audit(env,a.id,workspaceId,'contact.created',id);return json({item:{id,workspace_id:workspaceId,email,first_name:first,last_name:last,status:'subscribed',consent_source:consent}},201);
+    try{await env.DB.batch([env.DB.prepare('INSERT INTO contacts(id,workspace_id,email,first_name,last_name,consent_source,consent_at) VALUES(?,?,?,?,?,?,?)').bind(id,workspaceId,email,first,last,consent,today()),audit(env,a.id,workspaceId,'contact.created',id)])}catch(error){if(error instanceof Error&&/UNIQUE constraint failed/.test(error.message))return fail('Contact already exists in this workspace',409);throw error}
+    return json({item:{id,workspace_id:workspaceId,email,first_name:first,last_name:last,status:'subscribed',consent_source:consent}},201);
    }
    if(resource==='campaigns'){
     const name=boundedText(data.name,140),subject=boundedText(data.subject,200);if(name.length<2||subject.length<2)return fail('Campaign name and subject are required');
-    await env.DB.prepare("INSERT INTO campaigns(id,workspace_id,name,subject,status) VALUES(?,?,?,?,'draft')").bind(id,workspaceId,name,subject).run();await audit(env,a.id,workspaceId,'campaign.draft.created',id);
+    await env.DB.batch([env.DB.prepare("INSERT INTO campaigns(id,workspace_id,name,subject,status) VALUES(?,?,?,?,'draft')").bind(id,workspaceId,name,subject),audit(env,a.id,workspaceId,'campaign.draft.created',id)]);
     return json({item:{id,workspace_id:workspaceId,name,subject,status:'draft',created_at:today()}},201);
    }
    if(resource==='domains'){
     const hostname=validateDomain(data.hostname);if(!hostname)return fail('Enter a valid domain without https:// or a path');
-    try{await env.DB.prepare("INSERT INTO sender_domains(id,workspace_id,hostname,status) VALUES(?,?,?,'pending')").bind(id,workspaceId,hostname).run()}catch{return fail('Domain already added to this workspace',409)}
-    await audit(env,a.id,workspaceId,'domain.pending.created',id);
+    try{await env.DB.batch([env.DB.prepare("INSERT INTO sender_domains(id,workspace_id,hostname,status) VALUES(?,?,?,'pending')").bind(id,workspaceId,hostname),audit(env,a.id,workspaceId,'domain.pending.created',id)])}catch(error){if(error instanceof Error&&/UNIQUE constraint failed/.test(error.message))return fail('Domain already added to this workspace',409);throw error}
     return json({item:{id,workspace_id:workspaceId,hostname,status:'pending'}},201);
    }
   }
  }
  return fail('API endpoint not found',404);
 }
-export default {async fetch(req:Request,env:Env):Promise<Response>{try{return cors(req,env,await route(req,env))}catch(error){console.error('SparQFire API error',error instanceof Error?error.name:'Unknown');return cors(req,env,fail('A server error occurred. Please try again.',500))}}} satisfies ExportedHandler<Env>;
+function secureResponse(req:Request,response:Response){
+ const headers=new Headers(response.headers);
+ headers.set('X-Content-Type-Options','nosniff');headers.set('Referrer-Policy','strict-origin-when-cross-origin');
+ headers.set('X-Frame-Options','DENY');headers.set('Permissions-Policy','camera=(), microphone=(), geolocation=()');
+ if(new URL(req.url).protocol==='https:')headers.set('Strict-Transport-Security','max-age=31536000');
+ return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+}
+export default {
+ async fetch(req:Request,env:Env):Promise<Response>{
+  try{
+   const path=new URL(req.url).pathname;
+   if(path==='/api'||path.startsWith('/api/'))return secureResponse(req,cors(req,env,await route(req,env)));
+   if(!['GET','HEAD'].includes(req.method))return secureResponse(req,json({error:'Method not allowed'},405,{Allow:'GET, HEAD'}));
+   return secureResponse(req,env.ASSETS?await env.ASSETS.fetch(req):fail('Web assets are not configured',503));
+  }catch(error){console.error('SparQFire request failed',error instanceof Error?error.name:'Unknown');return secureResponse(req,cors(req,env,fail('A server error occurred. Please try again.',500)))}
+ },
+ async scheduled(_event:ScheduledController,env:Env){
+  const cutoff=new Date(Date.now()-86400000).toISOString();
+  await env.DB.batch([
+   env.DB.prepare('DELETE FROM sessions WHERE expires_at<=?').bind(today()),
+   env.DB.prepare('DELETE FROM login_attempts WHERE window_start<?').bind(cutoff),
+  ]);
+ },
+} satisfies ExportedHandler<Env>;
